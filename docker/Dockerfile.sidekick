@@ -1,0 +1,25 @@
+FROM quay.io/minio/sidekick:v7.1.2
+
+# Note: Sidekick is a minimal distroless image without package manager
+# We need to use a multi-stage build to add CA certificates
+
+# Stage 1: Get CA tools
+FROM alpine:latest AS ca-builder
+
+# Install CA certificates package
+RUN apk add --no-cache ca-certificates
+
+# Copy our custom CA certificate
+COPY certs/ca/ca.crt /usr/local/share/ca-certificates/minio-ca.crt
+
+# Update CA trust store
+RUN update-ca-certificates
+
+# Stage 2: Copy CA bundle to Sidekick
+FROM quay.io/minio/sidekick:v7.1.2
+
+# Copy the CA bundle from builder
+COPY --from=ca-builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+# Sidekick will now trust our custom CA when connecting to AIStor HTTPS
+

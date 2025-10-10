@@ -1,0 +1,32 @@
+FROM apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+
+USER root
+
+# Install curl and ca-certificates for healthcheck and TLS
+RUN apt-get update && \
+    apt-get install -y curl ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy and trust our custom CA certificate (OS level)
+COPY certs/ca/ca.crt /usr/local/share/ca-certificates/minio-ca.crt
+RUN update-ca-certificates
+
+# Import CA certificate into Java trust store (required for S3A HTTPS)
+# Find the Java cacerts file and import our CA
+RUN JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java)))) && \
+    keytool -import -trustcacerts -noprompt \
+    -alias minio-ca \
+    -file /usr/local/share/ca-certificates/minio-ca.crt \
+    -keystore ${JAVA_HOME}/lib/security/cacerts \
+    -storepass changeit
+
+# Copy entrypoint script
+RUN mkdir -p /opt/spark/docker
+COPY docker/entrypoint.spark.sh /opt/spark/docker/entrypoint.spark.sh
+RUN chmod +x /opt/spark/docker/entrypoint.spark.sh
+
+WORKDIR /opt/spark
+
+USER spark
+

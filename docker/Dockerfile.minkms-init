@@ -1,0 +1,12 @@
+FROM alpine:latest
+
+# Install required tools
+RUN apk add --no-cache curl bash netcat-openbsd ca-certificates
+
+# Download MinKMS CLI
+RUN curl -fsSL https://dl.min.io/aistor/minkms/release/linux-amd64/minkms -o /usr/local/bin/minkms && \
+    chmod +x /usr/local/bin/minkms
+
+# Default command
+CMD ["/bin/bash"]
+

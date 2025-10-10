@@ -1,0 +1,19 @@
+FROM minio/mc:latest
+
+USER root
+
+# Install ca-certificates
+RUN microdnf install -y ca-certificates 2>/dev/null || \
+    yum install -y ca-certificates 2>/dev/null || \
+    apk add --no-cache ca-certificates 2>/dev/null || true
+
+# Copy and trust our CA certificate  
+COPY certs/ca/ca.crt /etc/pki/ca-trust/source/anchors/minio-ca.crt
+RUN update-ca-trust extract 2>/dev/null || \
+    update-ca-certificates 2>/dev/null || \
+    (mkdir -p /etc/ssl/certs && cat /etc/pki/ca-trust/source/anchors/minio-ca.crt >> /etc/ssl/certs/ca-certificates.crt) || \
+    true
+
+# Stay as root for mc config write access
+# USER 1000
+

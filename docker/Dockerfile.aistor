@@ -1,0 +1,39 @@
+FROM quay.io/minio/aistor/minio:latest
+
+USER root
+
+# Check what package manager is available and install ca-certificates
+RUN if command -v apk > /dev/null; then \
+      apk add --no-cache ca-certificates; \
+    elif command -v apt-get > /dev/null; then \
+      apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*; \
+    elif command -v yum > /dev/null; then \
+      yum install -y ca-certificates && yum clean all; \
+    elif command -v microdnf > /dev/null; then \
+      microdnf install -y ca-certificates && microdnf clean all; \
+    fi
+
+# Copy our custom CA certificate
+COPY certs/ca/ca.crt /usr/local/share/ca-certificates/minio-ca.crt
+
+# Update CA trust store (try multiple methods)
+RUN if [ -f /usr/sbin/update-ca-certificates ]; then \
+      update-ca-certificates; \
+    elif [ -f /usr/bin/update-ca-trust ]; then \
+      cp /usr/local/share/ca-certificates/minio-ca.crt /etc/pki/ca-trust/source/anchors/ && \
+      update-ca-trust extract; \
+    else \
+      cat /usr/local/share/ca-certificates/minio-ca.crt >> /etc/ssl/certs/ca-certificates.crt; \
+    fi
+
+# Copy AIStor TLS certificates directly into image
+# MinIO auto-enables HTTPS when certs exist in /root/.minio/certs/
+RUN mkdir -p /root/.minio/certs
+COPY certs/aistor/server.crt /root/.minio/certs/public.crt
+COPY certs/aistor/server.key /root/.minio/certs/private.key
+RUN chmod 644 /root/.minio/certs/public.crt && \
+    chmod 600 /root/.minio/certs/private.key
+
+# Switch back to default user (container will run as root if no minio user exists)
+# USER minio
+

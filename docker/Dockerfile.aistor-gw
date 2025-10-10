@@ -1,0 +1,21 @@
+FROM golang:1.24-alpine AS build
+
+WORKDIR /build
+COPY go.* .
+COPY cmd ./cmd
+COPY pkg ./pkg
+RUN CGO_ENABLED=0 go build ./cmd/aistor-gw
+
+FROM alpine:latest
+
+WORKDIR /root/
+
+# Install ca-certificates for HTTPS connections
+RUN apk add --no-cache ca-certificates
+
+# Copy the binary from the builder stage
+COPY --from=build /build/aistor-gw .
+
+# Run the binary
+ENTRYPOINT ["./aistor-gw"]
+

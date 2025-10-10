@@ -1,0 +1,183 @@
+services:
+  minio:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.aistor
+    image: aistor-with-ca
+    container_name: aistor
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_LICENSE: /mnt/minio/minio.license
+      MINIO_VOLUMES: /mnt/minio/data
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      # MinKMS integration (enabled for server-side encryption)
+      MINIO_KMS_SERVER: https://minkms:7373
+      MINIO_KMS_ENCLAVE: aistor-deployment
+      MINIO_KMS_API_KEY: k1:t4TG5iG22LEUP2Y6dLWBCfTNquxzrVxuR_6yx16fATw
+      MINIO_KMS_SSE_KEY: spark-encryption-key
+      MINIO_KMS_TLS_CLIENT_CERT: /certs/client.crt
+      MINIO_KMS_TLS_CLIENT_KEY: /certs/client.key
+    command: server --console-address ":9001"
+    volumes:
+      - minio-data:/mnt/minio/data
+      - ./minio.license:/mnt/minio/minio.license:ro
+      - ./certs/aistor:/certs:ro
+    depends_on:
+      minkms-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fk", "https://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Sidekick - HTTP to HTTPS proxy for S3A compatibility
+  # Frontend: HTTP :8090 (for Spark/Python clients)
+  # Backend: HTTPS :9000 (to AIStor cluster)
+  sidekick:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.sidekick
+    image: sidekick-with-ca
+    container_name: sidekick
+    ports:
+      - "8090:8090"  # HTTP frontend for AIStor-GW
+    command:
+      - --health-path=/minio/health/ready
+      - --address=:8090
+      - https://aistor:9000
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Python S3 CRUD test container
+  python-s3-test:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.python-s3-test
+    image: python-s3-test
+    container_name: python-s3-test
+    depends_on:
+      sidekick:
+        condition: service_started
+      minio-client:
+        condition: service_started
+    volumes:
+      - ./scripts:/app/scripts:ro
+    environment:
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+
+  minio-client:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.minio-client
+    image: minio-client-with-ca
+    container_name: minio-client
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./docker/setup-buckets.sh:/setup-buckets.sh:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        # Initial setup
+        /setup-buckets.sh
+        
+        # Keep container running for interactive mc commands
+        echo "MinIO Client ready. Use: docker exec minio-client mc ..."
+        tail -f /dev/null
+    restart: unless-stopped
+
+  spark-master:
+    container_name: spark-master
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.spark
+    image: spark-image
+    entrypoint: ['./docker/entrypoint.spark.sh', 'master']
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080" ]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - ./scripts:/opt/spark/scripts
+      - ./data:/opt/spark/data
+      - spark-logs:/opt/spark/spark-events
+    env_file:
+      - .env.spark
+    ports:
+      - '8080:8080'
+      - '7077:7077'
+
+  spark-history-server:
+    container_name: spark-history
+    image: spark-image
+    entrypoint: ['./docker/entrypoint.spark.sh', 'history']
+    depends_on:
+      - spark-master
+    env_file:
+      - .env.spark
+    volumes:
+      - ./scripts:/opt/spark/scripts
+      - ./data:/opt/spark/data
+      - spark-logs:/opt/spark/spark-events
+    ports:
+      - '18080:18080'
+
+  spark-worker:
+    container_name: spark-worker
+    image: spark-image
+    entrypoint: ['./docker/entrypoint.spark.sh', 'worker']
+    depends_on:
+      - spark-master
+    env_file:
+      - .env.spark
+    volumes:
+      - ./scripts:/opt/spark/scripts
+      - ./data:/opt/spark/data
+      - spark-logs:/opt/spark/spark-events
+
+  minkms:
+    image: quay.io/minio/aistor/minkms:latest
+    container_name: minkms
+    ports:
+      - "7373:7373"
+    env_file:
+      - ./minkms/minkms.env
+    command: server --config /etc/minkms/config.yaml --license /etc/minkms/minio.license /data
+    volumes:
+      - ./minkms/config.yaml:/etc/minkms/config.yaml:ro
+      - ./certs/minkms:/etc/minkms/certs:ro
+      - ./certs/ca/ca.crt:/certs/ca.crt:ro
+      - ./minio.license:/etc/minkms/minio.license:ro
+      - minkms-data:/data
+    restart: unless-stopped
+    # Note: MinKMS container is minimal (no shell/curl/wget)
+    # Health monitoring via application logs and port availability
+
+  # Service to generate MinKMS API key
+  minkms-init:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.minkms-init
+    image: minkms-init-image
+    container_name: minkms-init
+    depends_on:
+      - minkms
+    volumes:
+      - ./certs/ca:/certs/ca:ro
+      - ./docker/init-minkms.sh:/init-minkms.sh:ro
+    entrypoint: ["/bin/bash", "/init-minkms.sh"]
+    restart: "no"
+
+volumes:
+  spark-logs:
+  minio-data:
+  minkms-data:

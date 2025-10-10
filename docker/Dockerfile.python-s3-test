@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+# Install boto3 (AWS S3 SDK for Python)
+RUN pip install --no-cache-dir boto3==1.34.34
+
+# Set working directory
+WORKDIR /app
+
+# Copy test script
+COPY scripts/s3_crud_test.py /app/s3_crud_test.py
+
+# Keep container running
+CMD ["tail", "-f", "/dev/null"]
+

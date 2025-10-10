@@ -1,0 +1,12 @@
+version: v1
+
+address: 0.0.0.0:7373
+
+tls:
+  certs:
+    - key: /etc/minkms/certs/server.key
+      cert: /etc/minkms/certs/server.crt
+  # Require client certificates (mTLS)
+  client:
+    verify: true
+    ca: /certs/ca.crt

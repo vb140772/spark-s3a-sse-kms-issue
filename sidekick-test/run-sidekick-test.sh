@@ -16,13 +16,13 @@ echo "============================================================"
 echo ""
 
 # Check if certificates exist
-if [ ! -f "certs/sidekick/public.crt" ] || [ ! -f "certs/sidekick/private.key" ]; then
+if [ ! -f "../certs/sidekick/public.crt" ] || [ ! -f "../certs/sidekick/private.key" ]; then
     echo "Certificates not found. Generating ECDSA certificates..."
     echo ""
-    bash docker/generate-sidekick-certs.sh certs/sidekick "MinIO Sidekick CA" "sidekick.local"
+    bash ../docker/generate-sidekick-certs.sh ../certs/sidekick "MinIO Sidekick CA" "sidekick.local"
     echo ""
 else
-    echo "✅ Certificates already exist in certs/sidekick/"
+    echo "✅ Certificates already exist in ../certs/sidekick/"
 fi
 
 echo ""

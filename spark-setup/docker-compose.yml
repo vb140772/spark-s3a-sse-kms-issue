@@ -1,7 +1,7 @@
 services:
   minio:
     build:
-      context: .
+      context: ..
       dockerfile: docker/Dockerfile.aistor
     image: aistor-with-ca
     container_name: aistor
@@ -24,8 +24,8 @@ services:
     command: server --console-address ":9001"
     volumes:
       - minio-data:/mnt/minio/data
-      - ./minio.license:/mnt/minio/minio.license:ro
-      - ./certs/aistor:/certs:ro
+      - ../minio.license:/mnt/minio/minio.license:ro
+      - ../certs/aistor:/certs:ro
     depends_on:
       minkms-init:
         condition: service_completed_successfully
@@ -40,7 +40,7 @@ services:
   # Backend: HTTPS :9000 (to AIStor cluster)
   sidekick:
     build:
-      context: .
+      context: ..
       dockerfile: docker/Dockerfile.sidekick
     image: sidekick-with-ca
     container_name: sidekick
@@ -62,13 +62,13 @@ services:
       minio:
         condition: service_healthy
     volumes:
-      - ./certs/sidekick:/etc/sidekick/certs:ro
+      - ../certs/sidekick:/etc/sidekick/certs:ro
     restart: unless-stopped
 
   # Python S3 CRUD test container
   python-s3-test:
     build:
-      context: .
+      context: ..
       dockerfile: docker/Dockerfile.python-s3-test
     image: python-s3-test
     container_name: python-s3-test
@@ -78,15 +78,15 @@ services:
       minio-client:
         condition: service_started
     volumes:
-      - ./scripts:/app/scripts:ro
-      - ./certs/sidekick:/certs/sidekick:ro
+      - ../scripts:/app/scripts:ro
+      - ../certs/sidekick:/certs/sidekick:ro
     environment:
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
 
   minio-client:
     build:
-      context: .
+      context: ..
       dockerfile: docker/Dockerfile.minio-client
     image: minio-client-with-ca
     container_name: minio-client
@@ -94,7 +94,7 @@ services:
       minio:
         condition: service_healthy
     volumes:
-      - ./docker/setup-buckets.sh:/setup-buckets.sh:ro
+      - ../docker/setup-buckets.sh:/setup-buckets.sh:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -109,7 +109,7 @@ services:
   spark-master:
     container_name: spark-master
     build:
-      context: .
+      context: ..
       dockerfile: docker/Dockerfile.spark
     image: spark-image
     entrypoint: ['./docker/entrypoint.spark.sh', 'master']
@@ -119,11 +119,11 @@ services:
       timeout: 3s
       retries: 3
     volumes:
-      - ./scripts:/opt/spark/scripts
-      - ./data:/opt/spark/data
+      - ../scripts:/opt/spark/scripts
+      - ../data:/opt/spark/data
       - spark-logs:/opt/spark/spark-events
     env_file:
-      - .env.spark
+      - ../.env.spark
     ports:
       - '8080:8080'
       - '7077:7077'
@@ -135,10 +135,10 @@ services:
     depends_on:
       - spark-master
     env_file:
-      - .env.spark
+      - ../.env.spark
     volumes:
-      - ./scripts:/opt/spark/scripts
-      - ./data:/opt/spark/data
+      - ../scripts:/opt/spark/scripts
+      - ../data:/opt/spark/data
       - spark-logs:/opt/spark/spark-events
     ports:
       - '18080:18080'
@@ -150,10 +150,10 @@ services:
     depends_on:
       - spark-master
     env_file:
-      - .env.spark
+      - ../.env.spark
     volumes:
-      - ./scripts:/opt/spark/scripts
-      - ./data:/opt/spark/data
+      - ../scripts:/opt/spark/scripts
+      - ../data:/opt/spark/data
       - spark-logs:/opt/spark/spark-events
 
   minkms:
@@ -162,13 +162,13 @@ services:
     ports:
       - "7373:7373"
     env_file:
-      - ./minkms/minkms.env
+      - ../minkms/minkms.env
     command: server --config /etc/minkms/config.yaml --license /etc/minkms/minio.license /data
     volumes:
-      - ./minkms/config.yaml:/etc/minkms/config.yaml:ro
-      - ./certs/minkms:/etc/minkms/certs:ro
-      - ./certs/ca/ca.crt:/certs/ca.crt:ro
-      - ./minio.license:/etc/minkms/minio.license:ro
+      - ../minkms/config.yaml:/etc/minkms/config.yaml:ro
+      - ../certs/minkms:/etc/minkms/certs:ro
+      - ../certs/ca/ca.crt:/certs/ca.crt:ro
+      - ../minio.license:/etc/minkms/minio.license:ro
       - minkms-data:/data
     restart: unless-stopped
     # Note: MinKMS container is minimal (no shell/curl/wget)
@@ -177,15 +177,15 @@ services:
   # Service to generate MinKMS API key
   minkms-init:
     build:
-      context: .
+      context: ..
       dockerfile: docker/Dockerfile.minkms-init
     image: minkms-init-image
     container_name: minkms-init
     depends_on:
       - minkms
     volumes:
-      - ./certs/ca:/certs/ca:ro
-      - ./docker/init-minkms.sh:/init-minkms.sh:ro
+      - ../certs/ca:/certs/ca:ro
+      - ../docker/init-minkms.sh:/init-minkms.sh:ro
     entrypoint: ["/bin/bash", "/init-minkms.sh"]
     restart: "no"
 

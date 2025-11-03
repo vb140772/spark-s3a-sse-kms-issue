@@ -2,22 +2,34 @@
 """
 S3 CRU Test Script
 Tests Create, Read, Update operations using boto3 SDK
-Connects to AIStor via Sidekick HTTP proxy (backend HTTPS + MinKMS)
+Connects to AIStor via Sidekick HTTPS proxy (frontend HTTPS + backend HTTPS + MinKMS)
 Note: No Delete - objects are kept in bucket for inspection
 """
 
 import boto3
 import json
+import os
 from datetime import datetime
 from botocore.client import Config
 from botocore.exceptions import ClientError
 
 # Configuration
-ENDPOINT_URL = "http://sidekick:8090"
+ENDPOINT_URL = "https://sidekick:8090"
 ACCESS_KEY = "minioadmin"
 SECRET_KEY = "minioadmin"
 BUCKET_NAME = "python-s3-test"
 REGION = "us-east-1"
+
+# SSL certificate verification
+# Use Sidekick CA certificate if available, otherwise use system default
+if os.path.exists('/certs/sidekick/ca.crt'):
+    SSL_VERIFY = '/certs/sidekick/ca.crt'
+elif os.path.exists('/etc/ssl/cert.pem'):
+    SSL_VERIFY = '/etc/ssl/cert.pem'
+elif os.path.exists('/etc/ssl/certs/ca-certificates.crt'):
+    SSL_VERIFY = '/etc/ssl/certs/ca-certificates.crt'
+else:
+    SSL_VERIFY = True  # Use system default
 
 def create_s3_client():
     """Create and configure S3 client"""
@@ -32,6 +44,7 @@ def create_s3_client():
         aws_access_key_id=ACCESS_KEY,
         aws_secret_access_key=SECRET_KEY,
         region_name=REGION,
+        verify=SSL_VERIFY,
         config=Config(signature_version='s3v4')
     )
     return s3_client

@@ -1,0 +1,89 @@
+services:
+  # MinIO AIStor - Single container deployment
+  minio:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.aistor
+    image: aistor-with-ca
+    container_name: aistor-sidekick
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_LICENSE: /mnt/minio/minio.license
+      MINIO_VOLUMES: /mnt/minio/data
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      # MinKMS integration (optional - can be disabled)
+      # MINIO_KMS_SERVER: https://minkms:7373
+      # MINIO_KMS_ENCLAVE: aistor-deployment
+      # MINIO_KMS_API_KEY: k1:t4TG5iG22LEUP2Y6dLWBCfTNquxzrVxuR_6yx16fATw
+      # MINIO_KMS_SSE_KEY: spark-encryption-key
+      # MINIO_KMS_TLS_CLIENT_CERT: /certs/client.crt
+      # MINIO_KMS_TLS_CLIENT_KEY: /certs/client.key
+      # MINIO_KMS_AUTO_ENCRYPTION: off
+    command: server --console-address ":9001"
+    volumes:
+      - minio-data:/mnt/minio/data
+      - ./minio.license:/mnt/minio/minio.license:ro
+      - ./certs/aistor:/certs:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fk", "https://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Sidekick - HTTPS frontend proxy
+  # Frontend: HTTPS :8000 (for clients)
+  # Backend: HTTPS :9000 (to MinIO AIStor)
+  sidekick:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.sidekick-https
+    image: sidekick-https
+    container_name: sidekick-https
+    ports:
+      - "8000:8000"  # HTTPS frontend
+    command:
+      - --address=:8000
+      - --health-path=/minio/health/live
+      - --log
+      - --insecure
+      # Note: --insecure is used because Sidekick's CA bundle verification
+      # may not work correctly with the MinIO backend certificate.
+      # The MinIO CA is included in the image, but Sidekick may need
+      # the certificate file path explicitly or a different configuration.
+      - --cert=/etc/sidekick/certs/public.crt
+      - --key=/etc/sidekick/certs/private.key
+      - https://minio:9000
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./certs/sidekick:/etc/sidekick/certs:ro
+    restart: unless-stopped
+
+  # Simple test client for S3 operations
+  s3-test-client:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.s3-test-client
+    image: s3-test-client
+    container_name: s3-test-client
+    depends_on:
+      sidekick:
+        condition: service_started
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./certs/sidekick:/certs:ro
+    environment:
+      S3_ENDPOINT: https://sidekick:8000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: test-bucket
+    # Keep container running for manual testing
+    command: ["tail", "-f", "/dev/null"]
+
+volumes:
+  minio-data:
+

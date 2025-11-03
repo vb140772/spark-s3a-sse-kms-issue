@@ -1,0 +1,24 @@
+FROM alpine:latest
+
+# Install necessary tools
+RUN apk add --no-cache \
+    curl \
+    ca-certificates \
+    openssl \
+    python3 \
+    py3-pip \
+    bash
+
+# Install boto3 for S3 operations
+# Use --break-system-packages for Alpine's externally-managed Python environment
+RUN pip3 install --no-cache-dir --break-system-packages boto3
+
+# Note: CA certificate will be mounted at runtime from certs/sidekick/
+# This allows certificate updates without rebuilding the image
+# The test script will handle certificate installation if needed
+
+WORKDIR /app
+
+# Default command (can be overridden)
+CMD ["/bin/bash"]
+

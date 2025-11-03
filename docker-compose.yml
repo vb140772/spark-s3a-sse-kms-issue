@@ -20,6 +20,7 @@ services:
       MINIO_KMS_SSE_KEY: spark-encryption-key
       MINIO_KMS_TLS_CLIENT_CERT: /certs/client.crt
       MINIO_KMS_TLS_CLIENT_KEY: /certs/client.key
+      MINIO_KMS_AUTO_ENCRYPTION: on
     command: server --console-address ":9001"
     volumes:
       - minio-data:/mnt/minio/data
@@ -34,8 +35,8 @@ services:
       timeout: 20s
       retries: 3
 
-  # Sidekick - HTTP to HTTPS proxy for S3A compatibility
-  # Frontend: HTTP :8090 (for Spark/Python clients)
+  # Sidekick - HTTPS to HTTPS proxy
+  # Frontend: HTTPS :8090 (for Spark/Python clients)
   # Backend: HTTPS :9000 (to AIStor cluster)
   sidekick:
     build:
@@ -44,14 +45,24 @@ services:
     image: sidekick-with-ca
     container_name: sidekick
     ports:
-      - "8090:8090"  # HTTP frontend for AIStor-GW
+      - "8090:8090"  # HTTPS frontend for Spark/Python clients
     command:
-      - --health-path=/minio/health/ready
       - --address=:8090
+      - --health-path=/minio/health/live
+      - --log
+      - --insecure
+      # Note: --insecure is used because Sidekick's CA bundle verification
+      # may not work correctly with the MinIO backend certificate.
+      # The MinIO CA is included in the image, but Sidekick may need
+      # the certificate file path explicitly or a different configuration.
+      - --cert=/etc/sidekick/certs/public.crt
+      - --key=/etc/sidekick/certs/private.key
       - https://aistor:9000
     depends_on:
       minio:
         condition: service_healthy
+    volumes:
+      - ./certs/sidekick:/etc/sidekick/certs:ro
     restart: unless-stopped
 
   # Python S3 CRUD test container
@@ -68,6 +79,7 @@ services:
         condition: service_started
     volumes:
       - ./scripts:/app/scripts:ro
+      - ./certs/sidekick:/certs/sidekick:ro
     environment:
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped

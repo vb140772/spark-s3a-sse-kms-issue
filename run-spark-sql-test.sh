@@ -4,6 +4,8 @@
 # Options:
 #   --select-only   Only run SELECT queries on existing data (skip write operations)
 #   --quiet, -q     Reduce output verbosity (show only essential information)
+#   --direct        Use HTTPS directly to AIStor (instead of HTTP via Sidekick)
+#   --sse-kms       Enable SSE-KMS encryption using MinKMS (requires HTTPS endpoint)
 
 echo "Running Spark SQL test with MinIO AIStor..."
 echo ""

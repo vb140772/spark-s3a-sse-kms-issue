@@ -8,16 +8,24 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy and trust our custom CA certificate (OS level)
+# Copy and trust our custom CA certificates (OS level)
+# MinIO CA for direct AIStor connections
 COPY certs/ca/ca.crt /usr/local/share/ca-certificates/minio-ca.crt
+# Sidekick CA for Sidekick HTTPS frontend connections
+COPY certs/sidekick/ca.crt /usr/local/share/ca-certificates/sidekick-ca.crt
 RUN update-ca-certificates
 
-# Import CA certificate into Java trust store (required for S3A HTTPS)
-# Find the Java cacerts file and import our CA
+# Import CA certificates into Java trust store (required for S3A HTTPS)
+# Find the Java cacerts file and import our CAs
 RUN JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java)))) && \
     keytool -import -trustcacerts -noprompt \
     -alias minio-ca \
     -file /usr/local/share/ca-certificates/minio-ca.crt \
+    -keystore ${JAVA_HOME}/lib/security/cacerts \
+    -storepass changeit && \
+    keytool -import -trustcacerts -noprompt \
+    -alias sidekick-ca \
+    -file /usr/local/share/ca-certificates/sidekick-ca.crt \
     -keystore ${JAVA_HOME}/lib/security/cacerts \
     -storepass changeit
 

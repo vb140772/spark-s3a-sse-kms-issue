@@ -6,19 +6,20 @@ FROM quay.io/minio/sidekick:v7.1.2
 # Stage 1: Get CA tools
 FROM alpine:latest AS ca-builder
 
-# Install CA certificates package
-RUN apk add --no-cache ca-certificates
+# Install CA certificates package and openssl
+RUN apk add --no-cache ca-certificates openssl
 
 # Copy our custom CA certificate (for backend MinIO connection)
+# MinIO uses certs/ca/ca.crt for its certificates
 COPY certs/ca/ca.crt /usr/local/share/ca-certificates/minio-ca.crt
 
 # Update CA trust store
 RUN update-ca-certificates
 
-# Stage 2: Copy CA bundle to Sidekick
+# Stage 2: Copy CA bundle and TLS certificates to Sidekick
 FROM quay.io/minio/sidekick:v7.1.2
 
-# Copy the CA bundle from builder (for backend HTTPS to AIStor)
+# Copy the CA bundle from builder (for backend HTTPS to MinIO)
 COPY --from=ca-builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # Note: TLS certificates for HTTPS frontend (public.crt and private.key)
@@ -26,6 +27,6 @@ COPY --from=ca-builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-cert
 # This allows certificate updates without rebuilding the image
 
 # Sidekick will now:
-# - Trust our custom CA when connecting to AIStor HTTPS backend
+# - Trust our custom CA when connecting to MinIO HTTPS backend
 # - Serve HTTPS on frontend using certificates mounted at /etc/sidekick/certs/
 

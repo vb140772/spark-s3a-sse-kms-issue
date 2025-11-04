@@ -391,6 +391,11 @@ ls -la minio.license
 - [Apache Spark S3A Documentation](https://hadoop.apache.org/docs/stable/hadoop-aws/tools/hadoop-aws/index.html)
 - [AWS SDK S3 Encryption Requirements](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingEncryption.html)
 
+## Production Deployment
+
+For production deployments using Sidekick as a Linux systemd service (not Docker), see:
+- **[SIDEKICK_SYSTEMD_SETUP.md](SIDEKICK_SYSTEMD_SETUP.md)** - Complete guide for setting up Sidekick as a systemd service with HTTPS, including certificate generation and configuration
+
 ## Summary
 
 This lab demonstrates that **Apache Spark S3A requires HTTPS when encryption headers are present**, even if the backend (AIStor) supports HTTPS. The AWS SDK enforces this security requirement to protect encryption keys in transit.

@@ -104,11 +104,9 @@ Expected status:
 ```bash
 cd spark-setup
 ./run-spark-sql-test.sh --quiet
-# or explicitly:
-./run-spark-sql-test.sh --https --quiet
 ```
 
-**Expected Result**: ✅ Success - Data written and read successfully
+**Expected Result**: ✅ Success - Data written and read successfully (default uses HTTPS)
 
 #### Test 2: Direct HTTPS to AIStor (✅ WORKS)
 
@@ -138,9 +136,9 @@ The `run-spark-sql-test.sh` script supports:
 Options:
   --select-only   Only run SELECT queries on existing data (skip write operations)
   --quiet, -q     Reduce output verbosity (show only essential information)
-  --direct        Use HTTPS directly to AIStor (https://aistor:9000)
+  --direct        Use HTTPS directly to AIStor (https://aistor:9000) ✅ WORKS
   --http          Use HTTP via Sidekick HTTP frontend (http://sidekick-http:8091) ❌ FAILS
-  --https         Use HTTPS via Sidekick HTTPS frontend (https://sidekick:8090) ✅ WORKS
+  (default)       Use HTTPS via Sidekick HTTPS frontend (https://sidekick:8090) ✅ WORKS
   --sse-kms       Enable SSE-KMS encryption using MinKMS (requires HTTPS endpoint)
 ```
 
@@ -201,7 +199,7 @@ This is enforced at `AmazonS3Client.assertHttps()` to protect encryption keys in
 
 1. **Option 1**: Use Sidekick HTTPS frontend (default)
    ```bash
-   ./run-spark-sql-test.sh  # Uses HTTPS via sidekick:8090
+   ./run-spark-sql-test.sh  # Default uses HTTPS via sidekick:8090
    ```
 
 2. **Option 2**: Use direct HTTPS to AIStor
@@ -310,8 +308,8 @@ docker-compose ps
 ```bash
 cd spark-setup
 
-# Test HTTPS (works)
-./run-spark-sql-test.sh --https --quiet
+# Test HTTPS (works - default)
+./run-spark-sql-test.sh --quiet
 
 # Test direct HTTPS (works)
 ./run-spark-sql-test.sh --direct --quiet

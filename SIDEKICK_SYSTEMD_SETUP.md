@@ -556,6 +556,175 @@ spark = SparkSession.builder \
 
 **Important**: Ensure the Sidekick CA certificate is trusted in Spark's Java truststore if using self-signed certificates.
 
+## Integration with Spark S3A and MinKMS (SSE-KMS Mode)
+
+When using MinIO AIStor with MinKMS for server-side encryption, you can configure Spark S3A to use SSE-KMS encryption. This requires HTTPS and proper configuration.
+
+### Prerequisites
+
+- MinIO AIStor with MinKMS configured and running
+- MinKMS enclave and identity created
+- Encryption key configured in MinKMS
+- Sidekick HTTPS frontend (required for SSE-KMS)
+
+### Configuration Options
+
+#### Option 1: Client-Side SSE-KMS Headers (Explicit Encryption)
+
+Spark explicitly requests SSE-KMS encryption by sending encryption headers:
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder \
+    .appName("Spark-Sidekick-SSE-KMS") \
+    .config("spark.hadoop.fs.s3a.endpoint", "https://sidekick.example.com:8090") \
+    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "true") \
+    .config("spark.hadoop.fs.s3a.access.key", "your-access-key") \
+    .config("spark.hadoop.fs.s3a.secret.key", "your-secret-key") \
+    .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+    # SSE-KMS Configuration
+    .config("spark.hadoop.fs.s3a.server-side-encryption-algorithm", "SSE-KMS") \
+    .config("spark.hadoop.fs.s3a.server-side-encryption.key", "spark-encryption-key") \
+    .getOrCreate()
+```
+
+**Important Requirements:**
+- ✅ **HTTPS is REQUIRED** - AWS SDK enforces HTTPS for SSE-KMS
+- ✅ Encryption key must exist in MinKMS (e.g., `spark-encryption-key`)
+- ✅ MinKMS must be accessible from MinIO AIStor
+
+**Configuration Details:**
+- `server-side-encryption-algorithm`: Set to `"SSE-KMS"` for Key Management Service encryption
+- `server-side-encryption.key`: The key name in MinKMS (must match the key configured in MinKMS)
+
+#### Option 2: Auto-Encryption (MinIO Handles Encryption)
+
+With `MINIO_KMS_AUTO_ENCRYPTION=on` enabled on AIStor, you can let MinIO handle encryption automatically without sending headers from Spark:
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder \
+    .appName("Spark-Sidekick-Auto-Encrypt") \
+    .config("spark.hadoop.fs.s3a.endpoint", "https://sidekick.example.com:8090") \
+    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "true") \
+    .config("spark.hadoop.fs.s3a.access.key", "your-access-key") \
+    .config("spark.hadoop.fs.s3a.secret.key", "your-secret-key") \
+    .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+    # Explicitly disable encryption headers to let AIStor handle it
+    .config("spark.hadoop.fs.s3a.server-side-encryption-algorithm", "") \
+    .config("spark.hadoop.fs.s3a.server-side-encryption.key", "") \
+    .getOrCreate()
+```
+
+**Benefits:**
+- ✅ Works with both HTTP and HTTPS (if encryption headers are disabled)
+- ✅ AIStor automatically encrypts all data via MinKMS
+- ✅ No client-side encryption configuration needed
+
+**Note**: If you use this approach with HTTP Sidekick frontend, you must disable encryption headers, otherwise AWS SDK will enforce HTTPS and fail.
+
+### MinKMS Configuration
+
+Ensure MinKMS is properly configured:
+
+1. **MinKMS Environment Variables** (on MinIO AIStor server):
+   ```bash
+   MINIO_KMS_SERVER=https://minkms.example.com:7373
+   MINIO_KMS_ENCLAVE=aistor-deployment
+   MINIO_KMS_API_KEY=k1:your-api-key-here
+   MINIO_KMS_SSE_KEY=spark-encryption-key
+   MINIO_KMS_TLS_CLIENT_CERT=/etc/ssl/certs/minkms-client.crt
+   MINIO_KMS_TLS_CLIENT_KEY=/etc/ssl/private/minkms-client.key
+   MINIO_KMS_AUTO_ENCRYPTION=on  # Optional: auto-encrypt all data
+   ```
+
+2. **MinKMS Key Creation**:
+   ```bash
+   # Create encryption key in MinKMS
+   minkms create-key \
+     -a k1:your-api-key \
+     --enclave aistor-deployment \
+     spark-encryption-key
+   ```
+
+3. **Verify MinKMS Connection**:
+   ```bash
+   # From MinIO AIStor server, test MinKMS connectivity
+   curl -k -H "Authorization: Bearer k1:your-api-key" \
+     https://minkms.example.com:7373/version
+   ```
+
+### Testing SSE-KMS Integration
+
+1. **Write Test** (with SSE-KMS):
+   ```python
+   # Write data with SSE-KMS encryption
+   data = [(1, "Alice", 100), (2, "Bob", 200)]
+   df = spark.createDataFrame(data, ["id", "name", "amount"])
+   df.write.mode("overwrite").parquet("s3a://your-bucket/test-data")
+   ```
+
+2. **Read Test**:
+   ```python
+   # Read encrypted data (decryption is automatic)
+   df = spark.read.parquet("s3a://your-bucket/test-data")
+   df.show()
+   ```
+
+3. **Verify Encryption**:
+   ```bash
+   # Check object metadata via MinIO client
+   mc stat your-alias/your-bucket/test-data/part-00000-*.parquet
+   
+   # Look for encryption metadata:
+   # - X-Amz-Server-Side-Encryption: aws:kms
+   # - X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id: spark-encryption-key
+   ```
+
+### Troubleshooting SSE-KMS
+
+#### Issue: "HTTPS must be used when sending customer encryption keys"
+
+**Cause**: Using HTTP endpoint with SSE-KMS headers.
+
+**Solution**: 
+- Use HTTPS Sidekick frontend (required for SSE-KMS)
+- Or disable encryption headers and use auto-encryption
+
+#### Issue: "Key not found" or "Invalid KMS key"
+
+**Cause**: Encryption key doesn't exist in MinKMS.
+
+**Solution**:
+```bash
+# List keys in MinKMS
+minkms list-keys -a k1:your-api-key --enclave aistor-deployment
+
+# Create key if missing
+minkms create-key -a k1:your-api-key --enclave aistor-deployment spark-encryption-key
+```
+
+#### Issue: "MinKMS connection failed"
+
+**Cause**: MinIO AIStor cannot reach MinKMS.
+
+**Solution**:
+- Verify MinKMS is running: `systemctl status minkms`
+- Check network connectivity: `curl -k https://minkms.example.com:7373/version`
+- Verify TLS certificates are valid
+- Check MinIO logs: `journalctl -u minio -n 100`
+
+#### Issue: Encryption not working
+
+**Cause**: MinKMS not properly configured or auto-encryption disabled.
+
+**Solution**:
+- Verify `MINIO_KMS_AUTO_ENCRYPTION=on` is set (for auto-encryption)
+- Or ensure SSE-KMS headers are sent from Spark (for explicit encryption)
+- Check MinIO logs for KMS connection errors
+
 ## References
 
 - [MinIO Sidekick GitHub](https://github.com/minio/sidekick)

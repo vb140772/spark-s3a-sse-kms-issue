@@ -215,6 +215,117 @@ This is enforced at `AmazonS3Client.assertHttps()` to protect encryption keys in
    - Don't set `spark.hadoop.fs.s3a.server-side-encryption-algorithm`
    - AIStor will encrypt automatically via `MINIO_KMS_AUTO_ENCRYPTION=on`
 
+## Spark S3A Integration with MinKMS (SSE-KMS Mode)
+
+### Overview
+
+When using MinIO AIStor with MinKMS, you can configure Spark S3A to use SSE-KMS (Server-Side Encryption with Key Management Service) for data encryption at rest.
+
+### Configuration Methods
+
+#### Method 1: Explicit SSE-KMS Headers (Client-Initiated)
+
+Spark explicitly requests SSE-KMS encryption by sending encryption headers. **This requires HTTPS**.
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder \
+    .appName("Spark-SSE-KMS") \
+    .config("spark.hadoop.fs.s3a.endpoint", "https://sidekick:8090") \
+    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "true") \
+    .config("spark.hadoop.fs.s3a.access.key", "minioadmin") \
+    .config("spark.hadoop.fs.s3a.secret.key", "minioadmin") \
+    .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+    # SSE-KMS Configuration
+    .config("spark.hadoop.fs.s3a.server-side-encryption-algorithm", "SSE-KMS") \
+    .config("spark.hadoop.fs.s3a.server-side-encryption.key", "spark-encryption-key") \
+    .getOrCreate()
+```
+
+**Requirements:**
+- ✅ HTTPS endpoint (enforced by AWS SDK)
+- ✅ Encryption key must exist in MinKMS
+- ✅ MinKMS must be configured and accessible from AIStor
+
+**Test with this lab:**
+```bash
+./run-spark-sql-test.sh --sse-kms --quiet
+```
+
+#### Method 2: Auto-Encryption (Server-Initiated)
+
+With `MINIO_KMS_AUTO_ENCRYPTION=on` enabled on AIStor, encryption happens automatically without client headers:
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder \
+    .appName("Spark-Auto-Encrypt") \
+    .config("spark.hadoop.fs.s3a.endpoint", "https://sidekick:8090") \
+    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "true") \
+    .config("spark.hadoop.fs.s3a.access.key", "minioadmin") \
+    .config("spark.hadoop.fs.s3a.secret.key", "minioadmin") \
+    .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+    # Explicitly disable encryption headers
+    .config("spark.hadoop.fs.s3a.server-side-encryption-algorithm", "") \
+    .config("spark.hadoop.fs.s3a.server-side-encryption.key", "") \
+    .getOrCreate()
+```
+
+**Benefits:**
+- ✅ Works with both HTTP and HTTPS (when headers are disabled)
+- ✅ No client-side encryption configuration needed
+- ✅ AIStor automatically encrypts all data via MinKMS
+
+**Note**: This is the default behavior in this lab (auto-encryption enabled).
+
+### MinKMS Configuration in This Lab
+
+The Docker Compose setup includes MinKMS with the following configuration:
+
+```yaml
+environment:
+  MINIO_KMS_SERVER: https://minkms:7373
+  MINIO_KMS_ENCLAVE: aistor-deployment
+  MINIO_KMS_API_KEY: k1:your-api-key
+  MINIO_KMS_SSE_KEY: spark-encryption-key
+  MINIO_KMS_AUTO_ENCRYPTION: on  # Auto-encrypt all data
+```
+
+**Encryption Key**: `spark-encryption-key` (created during MinKMS initialization)
+
+### Why HTTPS is Required for SSE-KMS Headers
+
+When Spark sends SSE-KMS encryption headers:
+- AWS SDK detects encryption headers (`SSE-KMS`)
+- AWS SDK enforces HTTPS to protect encryption keys in transit
+- HTTP connection is rejected with: `HTTPS must be used when sending customer encryption keys`
+
+**This is why:**
+- ✅ HTTPS Sidekick frontend works with `--sse-kms` flag
+- ❌ HTTP Sidekick frontend fails with `--sse-kms` flag (demonstrates the issue)
+- ✅ Auto-encryption works with HTTP (no headers sent, so no HTTPS enforcement)
+
+### Testing SSE-KMS in This Lab
+
+```bash
+# Test with explicit SSE-KMS headers (requires HTTPS)
+cd spark-setup
+./run-spark-sql-test.sh --sse-kms --quiet  # Uses HTTPS, works ✅
+
+# Test with HTTP frontend and SSE-KMS (will fail)
+./run-spark-sql-test.sh --http --sse-kms --quiet  # Fails ❌
+
+# Test with auto-encryption (no headers, works with HTTP)
+./run-spark-sql-test.sh --http --quiet  # Works if headers disabled ✅
+```
+
+### Production Deployment
+
+For production deployments with MinKMS, see:
+- **[SIDEKICK_SYSTEMD_SETUP.md](SIDEKICK_SYSTEMD_SETUP.md)** - Section on "Integration with Spark S3A and MinKMS (SSE-KMS Mode)"
+
 ## Services
 
 ### MinIO AIStor (Enterprise Object Storage)

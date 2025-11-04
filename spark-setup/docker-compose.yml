@@ -38,12 +38,12 @@ services:
   # Sidekick - HTTPS to HTTPS proxy
   # Frontend: HTTPS :8090 (for Spark/Python clients)
   # Backend: HTTPS :9000 (to AIStor cluster)
-  sidekick:
+  sidekick-https:
     build:
       context: ..
       dockerfile: docker/Dockerfile.sidekick
     image: sidekick-with-ca
-    container_name: sidekick
+    container_name: sidekick-https
     ports:
       - "8090:8090"  # HTTPS frontend for Spark/Python clients
     command:
@@ -64,6 +64,36 @@ services:
     volumes:
       - ../certs/sidekick:/etc/sidekick/certs:ro
     restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - sidekick  # Backwards compatibility alias
+
+  # Sidekick - HTTP to HTTPS proxy
+  # Frontend: HTTP :8091 (for Spark/Python clients - no SSL config needed)
+  # Backend: HTTPS :9000 (to AIStor cluster)
+  sidekick-http:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sidekick
+    image: sidekick-with-ca
+    container_name: sidekick-http
+    ports:
+      - "8091:8091"  # HTTP frontend for Spark/Python clients
+    command:
+      - --address=:8091
+      - --health-path=/minio/health/live
+      - --log
+      - --insecure
+      # Note: --insecure is used because Sidekick's CA bundle verification
+      # may not work correctly with the MinIO backend certificate.
+      # The MinIO CA is included in the image, but Sidekick may need
+      # the certificate file path explicitly or a different configuration.
+      - https://aistor:9000
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
 
   # Python S3 CRUD test container
   python-s3-test:
@@ -73,7 +103,9 @@ services:
     image: python-s3-test
     container_name: python-s3-test
     depends_on:
-      sidekick:
+      sidekick-https:
+        condition: service_started
+      sidekick-http:
         condition: service_started
       minio-client:
         condition: service_started

@@ -11,7 +11,9 @@ parser.add_argument('--quiet', '-q', action='store_true',
 parser.add_argument('--sse-kms', action='store_true',
                     help='Enable SSE-KMS encryption using MinKMS (key: spark-encryption-key)')
 parser.add_argument('--direct', action='store_true',
-                    help='Use HTTPS directly to AIStor (https://aistor:9000) instead of HTTP via Sidekick')
+                    help='Use HTTPS directly to AIStor (https://aistor:9000) instead of via Sidekick')
+parser.add_argument('--http', action='store_true',
+                    help='Use HTTP via Sidekick HTTP frontend (http://sidekick-http:8091) instead of HTTPS')
 args = parser.parse_args()
 
 # Determine endpoint and protocol based on flags
@@ -21,15 +23,25 @@ if args.direct:
     ssl_enabled = True
     app_name = "SQL-Test-MinIO-AIStor-HTTPS-Direct"
     protocol = "HTTPS (direct to AIStor)"
+elif args.http:
+    # Use HTTP via Sidekick HTTP frontend
+    endpoint = "http://sidekick-http:8091"
+    ssl_enabled = False
+    app_name = "SQL-Test-MinIO-Sidekick-HTTP"
+    protocol = "HTTP (via Sidekick HTTP frontend)"
 else:
-    # Use HTTPS via Sidekick proxy (default)
+    # Use HTTPS via Sidekick HTTPS frontend (default)
+    # Using 'sidekick' alias for backwards compatibility (maps to sidekick-https service)
     endpoint = "https://sidekick:8090"
     ssl_enabled = True
     app_name = "SQL-Test-MinIO-Sidekick-HTTPS"
-    protocol = "HTTPS (via Sidekick)"
+    protocol = "HTTPS (via Sidekick HTTPS frontend)"
 
 # Create Spark session
-# Configuration: Spark S3A → HTTPS → [Sidekick/AIStor] → AIStor → MinKMS
+# Configuration options:
+# - Default: Spark S3A → HTTPS → Sidekick-HTTPS → HTTPS → AIStor → MinKMS
+# - --http: Spark S3A → HTTP → Sidekick-HTTP → HTTPS → AIStor → MinKMS
+# - --direct: Spark S3A → HTTPS → AIStor → MinKMS
 spark_builder = SparkSession.builder \
     .appName(app_name) \
     .master("local[2]") \

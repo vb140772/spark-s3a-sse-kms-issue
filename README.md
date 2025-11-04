@@ -65,7 +65,10 @@ Failing Configuration:
 ### Prerequisites
 
 - Docker Desktop for Mac
-- MinIO Enterprise License (stored in `minio.license`)
+- **MinIO Enterprise License**: A valid `minio.license` file must be present in the project root directory
+  - This file is required for MinIO AIStor and MinKMS Enterprise features
+  - The file is gitignored (see `.gitignore`) and should not be committed to version control
+  - If you don't have a license, contact MinIO for Enterprise licensing
 - Basic understanding of Spark, S3, and TLS/SSL
 
 ### 1. Generate Certificates
@@ -226,7 +229,7 @@ This is enforced at `AmazonS3Client.assertHttps()` to protect encryption keys in
 - **Container**: `sidekick-https`
 - **Port**: 8090:8090 (HTTPS frontend)
 - **Backend**: `https://aistor:9000` (HTTPS)
-- **Use**: Default or `--https` flag
+- **Use**: Default (no flag needed)
 
 ### Sidekick HTTP Frontend (❌ Fails with Encryption)
 - **Container**: `sidekick-http`
@@ -270,7 +273,8 @@ spark-s3a-sse-kms-issue/
 ├── scripts/                        # Test scripts
 │   ├── sql_test.py                 # Spark SQL test (main test script)
 │   └── s3_crud_test.py             # Python S3 CRUD test
-├── minio.license                   # Enterprise license file (gitignored)
+├── minio.license                   # ⚠️ REQUIRED: MinIO Enterprise license file (gitignored)
+│                                   # Must be obtained from MinIO and placed in project root
 ├── minkms/                         # MinKMS configuration
 │   ├── config.yaml                 # TLS settings
 │   └── minkms.env                  # HSM key
@@ -335,7 +339,7 @@ cd spark-setup
 **Cause**: Using HTTP endpoint with encryption headers.
 
 **Solution**: 
-- Use HTTPS endpoint (`--https` or default)
+- Use HTTPS endpoint (default, no flag needed)
 - Or use direct HTTPS (`--direct`)
 - Or disable encryption headers in Spark (let AIStor handle auto-encryption)
 
@@ -357,13 +361,28 @@ cd spark-setup
 # Check certificates
 ls -la certs/ca/ca.crt certs/aistor/server.crt certs/sidekick/ca.crt
 
-# Check license
+# Check license file (REQUIRED)
 ls -la minio.license
+
+# If minio.license is missing:
+# 1. Obtain MinIO Enterprise license from MinIO
+# 2. Place the license file in the project root: minio.license
+# 3. Restart services: docker-compose restart minio
 
 # Regenerate certificates if needed
 ./docker/generate-certs.sh
 ./docker/generate-sidekick-certs.sh certs/sidekick "MinIO Sidekick CA" "sidekick.local"
 ```
+
+### Issue: "License file not found" or AIStor/MinKMS fails to start
+
+**Cause**: Missing `minio.license` file.
+
+**Solution**:
+1. Ensure `minio.license` file exists in the project root directory
+2. Verify the file is readable: `cat minio.license | head -1` (should show JWT token)
+3. Check Docker volume mount in `docker-compose.yml` points to the correct location
+4. Restart the service: `docker-compose restart minio minkms`
 
 ## References
 
